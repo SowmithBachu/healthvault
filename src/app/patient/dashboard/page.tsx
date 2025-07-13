@@ -32,6 +32,7 @@ import {
   Clock3,
   CheckCircle,
   AlertCircle,
+  Circle,
   Info,
   Star,
   Award,
@@ -87,6 +88,18 @@ interface MedicationReminder {
   date: string
 }
 
+interface MedicationFeedback {
+  id: string
+  prescriptionId: string
+  medicationName: string
+  effectiveness: string
+  symptoms: string[]
+  sideEffects: string[]
+  notes: string
+  date: string
+  createdAt: string
+}
+
 export default function PatientDashboard() {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,6 +126,10 @@ export default function PatientDashboard() {
     date: new Date().toISOString().split('T')[0]
   })
   
+  const [medicationFeedbacks, setMedicationFeedbacks] = useState<MedicationFeedback[]>([])
+  const [showFeedbackDisplay, setShowFeedbackDisplay] = useState(false)
+  const [selectedPrescriptionForFeedback, setSelectedPrescriptionForFeedback] = useState<Prescription | null>(null)
+  
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -129,7 +146,7 @@ export default function PatientDashboard() {
     { date: '2024-01-05', value: 121, type: 'bloodPressure' },
   ])
 
-  const [reminders] = useState<MedicationReminder[]>([
+  const [reminders, setReminders] = useState<MedicationReminder[]>([
     { id: '1', medicationName: 'Aspirin', time: '08:00', taken: true, date: '2024-01-15' },
     { id: '2', medicationName: 'Vitamin D', time: '12:00', taken: false, date: '2024-01-15' },
     { id: '3', medicationName: 'Omega-3', time: '18:00', taken: false, date: '2024-01-15' },
@@ -392,11 +409,25 @@ export default function PatientDashboard() {
   }
 
   const handleFeedbackSubmit = () => {
+    if (!selectedMedicationForFeedback) return
+    
+    const newFeedback: MedicationFeedback = {
+      id: Date.now().toString(),
+      prescriptionId: selectedMedicationForFeedback.id,
+      medicationName: selectedMedicationForFeedback.medicationName,
+      effectiveness: feedbackData.effectiveness,
+      symptoms: feedbackData.symptoms,
+      sideEffects: feedbackData.sideEffects,
+      notes: feedbackData.notes,
+      date: feedbackData.date,
+      createdAt: new Date().toISOString()
+    }
+    
+    // Store feedback in state
+    setMedicationFeedbacks(prev => [...prev, newFeedback])
+    
     // Here you would typically send the feedback to your backend
-    console.log('Feedback submitted:', {
-      medication: selectedMedicationForFeedback?.medicationName,
-      feedback: feedbackData
-    })
+    console.log('Feedback submitted:', newFeedback)
     
     // Show success message
     alert('Feedback submitted successfully! Your doctor will be notified.')
@@ -413,6 +444,61 @@ export default function PatientDashboard() {
     }))
   }
 
+  const toggleReminder = (reminderId: string) => {
+    setReminders(prev => prev.map(reminder => 
+      reminder.id === reminderId 
+        ? { ...reminder, taken: !reminder.taken }
+        : reminder
+    ))
+  }
+
+  const showFeedbackForPrescription = (prescription: Prescription) => {
+    setSelectedPrescriptionForFeedback(prescription)
+    setShowFeedbackDisplay(true)
+  }
+
+  const getFeedbackForPrescription = (prescriptionId: string) => {
+    return medicationFeedbacks.filter(feedback => feedback.prescriptionId === prescriptionId)
+  }
+
+  const [allFeedback, setAllFeedback] = useState<MedicationFeedback[]>([])
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
+
+  // Fetch all feedback for the patient
+  const fetchAllFeedback = async () => {
+    setFeedbackLoading(true)
+    try {
+      const res = await fetch('/api/feedback', { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        // Parse JSON fields
+        setAllFeedback(
+          data.map((fb: any) => ({
+            ...fb,
+            symptoms: typeof fb.symptoms === 'string' ? JSON.parse(fb.symptoms) : fb.symptoms,
+            sideEffects: typeof fb.sideEffects === 'string' ? JSON.parse(fb.sideEffects) : fb.sideEffects,
+          }))
+        )
+      }
+    } catch (e) {
+      console.error('Error fetching feedback', e)
+    } finally {
+      setFeedbackLoading(false)
+    }
+  }
+
+  // Fetch feedback on component mount
+  useEffect(() => {
+    fetchAllFeedback()
+  }, [])
+
+  // Group feedback by prescription
+  const feedbackByPrescription = allFeedback.reduce((acc: Record<string, MedicationFeedback[]>, fb) => {
+    if (!acc[fb.medicationName]) acc[fb.medicationName] = []
+    acc[fb.medicationName].push(fb)
+    return acc
+  }, {})
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-96 dark:bg-gray-900">
@@ -426,150 +512,154 @@ export default function PatientDashboard() {
   }
 
   return (
-    <div className={`space-y-6 transition-colors duration-300 ${isDarkMode ? 'dark' : ''} bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 min-h-screen`}>
-      {/* Enhanced Header with Real-time Clock */}
-      <div className="flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/20 dark:border-gray-800/20">
+    <div className={`transition-colors duration-300 ${isDarkMode ? 'dark' : ''} bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 min-h-screen`}>
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-200/40 dark:border-slate-700/40 shadow-lg shadow-slate-200/20 dark:shadow-slate-900/20">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Patient Dashboard</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage your medical prescriptions and track your health</p>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">HealthVault</h1>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Your Personal Health Dashboard</p>
         </div>
-        <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleDarkMode}
-            className="p-3 rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-gray-200 hover:to-gray-300 dark:hover:from-gray-700 dark:hover:to-gray-600 transition-all shadow-md"
+                className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-white/90 dark:hover:bg-slate-700/90 transition-all shadow-lg shadow-slate-200/30 dark:shadow-slate-900/30 border border-slate-200/40 dark:border-slate-700/40 backdrop-blur-sm"
           >
-            {isDarkMode ? <Sun className="h-5 w-5 text-yellow-500" /> : <Moon className="h-5 w-5 text-gray-600" />}
+                {isDarkMode ? <Sun className="h-5 w-5 text-amber-500" /> : <Moon className="h-5 w-5 text-slate-600" />}
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowNotifications(!showNotifications)}
-            className="p-3 rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-gray-200 hover:to-gray-300 dark:hover:from-gray-700 dark:hover:to-gray-600 transition-all shadow-md relative"
+                className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-white/90 dark:hover:bg-slate-700/90 transition-all shadow-lg shadow-slate-200/30 dark:shadow-slate-900/30 border border-slate-200/40 dark:border-slate-700/40 backdrop-blur-sm relative"
           >
-            <Bell className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                <Bell className="h-5 w-5 text-slate-600 dark:text-slate-400" />
             {stats.total > 0 && (
               <motion.span 
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center"
+                    className="absolute -top-1 -right-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium shadow-lg shadow-rose-500/30"
               >
                 {stats.total}
               </motion.span>
             )}
           </motion.button>
-        </div>
-      </div>
-
-      {/* Move Recent Prescriptions and Quick Actions to the top */}
-      <div className="flex flex-col gap-6">
-      {/* Enhanced Recent Prescriptions */}
-      <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-950 dark:to-blue-950 rounded-2xl shadow-xl border border-white/20 dark:border-gray-800/20 overflow-hidden">
-        <div className="px-8 py-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-500 to-indigo-600">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-white/20 rounded-full backdrop-blur-sm">
-                <FileText className="h-8 w-8 text-white" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-white">Recent Prescriptions</h2>
-                <p className="text-blue-100">Your current medication records</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-sm text-blue-100 bg-white/20 px-3 py-1 rounded-full">
-                {filteredPrescriptions.length} of {prescriptions.length}
-              </span>
-              <button className="text-white hover:text-blue-100 text-sm font-medium bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-all">
-                View All
-              </button>
             </div>
           </div>
         </div>
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {filteredPrescriptions.slice(0, 5).map((prescription, index) => (
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+      {/* Main Dashboard Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Recent Prescriptions */}
+        <div className="xl:col-span-2 bg-white/90 dark:bg-slate-900/90 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-slate-900/20 border border-slate-200/30 dark:border-slate-700/30 overflow-hidden backdrop-blur-sm">
+          <div className="px-6 py-5 bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-purple-50/40 dark:from-slate-800/60 dark:via-slate-700/40 dark:to-slate-600/30 border-b border-slate-200/40 dark:border-slate-700/40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+                <div className="p-3 bg-gradient-to-br from-blue-500/90 via-indigo-600/90 to-purple-600/90 rounded-xl shadow-lg shadow-blue-500/20">
+                  <FileText className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                  <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Recent Prescriptions</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Your current medications</p>
+              </div>
+            </div>
+              <div className="px-4 py-2 bg-gradient-to-r from-blue-100/80 to-indigo-100/60 dark:from-blue-900/40 dark:to-indigo-900/30 rounded-full border border-blue-200/50 dark:border-blue-800/50 shadow-sm">
+                <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                {filteredPrescriptions.length} of {prescriptions.length}
+              </span>
+            </div>
+          </div>
+        </div>
+          <div className="divide-y divide-slate-200/50 dark:divide-slate-700/50">
+            {filteredPrescriptions.slice(0, 3).map((prescription, index) => (
             <motion.div
               key={prescription.id}
-              initial={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-              className="px-8 py-6 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                transition={{ duration: 0.2, delay: index * 0.05 }}
+                className="px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
             >
               <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <h3 className="text-sm font-medium text-slate-900 dark:text-white truncate">
                       {prescription.medicationName}
                     </h3>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       prescription.isActive 
-                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' 
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
                     }`}>
                       {prescription.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
-                  {
-                    (prescription.dosage !== 'N/A' && prescription.dosage) ||
-                    (prescription.frequency !== 'N/A' && prescription.frequency) ||
-                    (prescription.duration !== 'N/A' && prescription.duration)
-                      ? (
-                        <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <div className="flex flex-wrap items-center gap-1 mb-1">
                           {prescription.dosage && prescription.dosage !== 'N/A' && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold">
-                              <Pill className="h-4 w-4 mr-1 text-blue-400" /> {prescription.dosage}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-xs">
+                          <Pill className="h-3 w-3 mr-1" /> {prescription.dosage}
                             </span>
                           )}
                           {prescription.frequency && prescription.frequency !== 'N/A' && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-lg bg-green-50 text-green-700 text-sm font-semibold">
-                              <Clock className="h-4 w-4 mr-1 text-green-400" /> {prescription.frequency}
-                            </span>
-                          )}
-                          {prescription.duration && prescription.duration !== 'N/A' && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-lg bg-purple-50 text-purple-700 text-sm font-semibold">
-                              <Calendar className="h-4 w-4 mr-1 text-purple-400" /> {prescription.duration}
-                            </span>
-                          )}
-                          {prescription.instructions && prescription.instructions.trim() !== '' && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-lg bg-yellow-50 text-yellow-700 text-sm font-semibold cursor-pointer group relative">
-                              <FileText className="h-4 w-4 mr-1 text-yellow-400" />
-                              Instructions
-                              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-white border border-gray-200 rounded shadow-lg text-xs text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                {prescription.instructions}
-                              </span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-xs">
+                          <Clock className="h-3 w-3 mr-1" /> {prescription.frequency}
                             </span>
                           )}
                         </div>
-                      ) : null
-                  }
-                  <p className="text-sm text-gray-500 dark:text-gray-500">
-                    Prescribed: {formatDate(prescription.prescribedDate)}
-                    {prescription.hospital && (
-                      <span> • {prescription.hospital.hospitalName || prescription.hospital.name}</span>
-                    )}
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {formatDate(prescription.prescribedDate)}
                   </p>
                 </div>
-                <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1">
+                    {/* Feedback Display Button */}
+                    {getFeedbackForPrescription(prescription.id).length > 0 && (
+                      <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => showFeedbackForPrescription(prescription)}
+                        className="text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 p-1.5 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                        title="View Feedback"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                      </motion.button>
+                    )}
+                    
+                    {/* Feedback Button - Always visible */}
+                    <motion.button 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => openFeedbackModal(prescription)}
+                      className="text-orange-500 hover:text-orange-600 dark:hover:text-orange-400 p-1.5 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                      title="Give Feedback"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </motion.button>
+                    
                   {prescription.imageUrl && (
                     <>
                       <motion.button 
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => handleViewImage(prescription.imageUrl!)}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                         title="View Image"
                       >
-                        <Eye className="h-5 w-5" />
+                          <Eye className="h-4 w-4" />
                       </motion.button>
                       <motion.button 
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => handleDownloadImage(prescription.imageUrl!, prescription.medicationName)}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                         title="Download Image"
                       >
-                        <Download className="h-5 w-5" />
+                          <Download className="h-4 w-4" />
                       </motion.button>
                     </>
                   )}
@@ -578,71 +668,67 @@ export default function PatientDashboard() {
             </motion.div>
           ))}
           {filteredPrescriptions.length === 0 && (
-            <div className="px-8 py-12 text-center">
-              <FileText className="mx-auto h-16 w-16 text-gray-400 dark:text-gray-500 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No prescriptions found</h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                {searchTerm || filterStatus !== 'all' 
-                  ? 'Try adjusting your search or filter criteria.'
-                  : 'Get started by having your hospital add prescriptions to your account.'
-                }
+              <div className="px-4 py-8 text-center">
+                <FileText className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-500 mb-2" />
+                <h3 className="text-sm font-medium text-slate-900 dark:text-white mb-1">No prescriptions found</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Get started by uploading your prescriptions.
               </p>
             </div>
           )}
         </div>
       </div>
       
-            {/* Enhanced Quick Actions */}
-      <div className="bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 dark:from-gray-900 dark:via-gray-950 dark:to-emerald-950 rounded-2xl shadow-xl border border-white/20 dark:border-gray-800/20 overflow-hidden">
-        <div className="px-8 py-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-emerald-500 to-teal-600">
+        {/* Quick Actions - Compact */}
+        {/* Quick Actions */}
+        <div className="bg-white/90 dark:bg-slate-900/90 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-slate-900/20 border border-slate-200/30 dark:border-slate-700/30 overflow-hidden backdrop-blur-sm">
+          <div className="px-6 py-5 bg-gradient-to-r from-emerald-50/80 via-green-50/60 to-teal-50/40 dark:from-slate-800/60 dark:via-slate-700/40 dark:to-slate-600/30 border-b border-slate-200/40 dark:border-slate-700/40">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-white/20 rounded-full backdrop-blur-sm">
-              <Zap className="h-8 w-8 text-white" />
+              <div className="p-3 bg-gradient-to-br from-emerald-500/90 via-green-600/90 to-teal-600/90 rounded-xl shadow-lg shadow-emerald-500/20">
+                <Zap className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">Quick Actions</h2>
-              <p className="text-emerald-100">Essential tools for your health management</p>
+                <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Quick Actions</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Essential health tools</p>
             </div>
           </div>
         </div>
-        <div className="p-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="p-5 space-y-4">
             <motion.button 
-              whileHover={{ scale: 1.05, y: -4 }}
+              whileHover={{ scale: 1.02, y: -2 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setShowUploadModal(true)}
-              className="group relative overflow-hidden flex items-center justify-center px-8 py-8 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 border border-blue-400/20"
+              className="group relative overflow-hidden flex items-center justify-center px-4 py-3 bg-gradient-to-br from-blue-500/90 via-indigo-600/90 to-purple-600/90 hover:from-blue-600 hover:via-indigo-700 hover:to-purple-700 text-white rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 border border-blue-400/30 w-full"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-              <div className="relative flex items-center gap-6">
-                <div className="p-4 bg-white/20 rounded-full backdrop-blur-sm">
-                  <Plus className="h-10 w-10" />
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+              <div className="relative flex items-center gap-3">
+                <div className="p-2 bg-white/25 rounded-lg backdrop-blur-sm shadow-sm">
+                  <Plus className="h-4 w-4" />
                 </div>
                 <div className="text-left">
-                  <div className="text-2xl font-bold mb-1">Upload Prescription</div>
-                  <div className="text-blue-100">Add new medication records to your profile</div>
+                  <div className="text-sm font-semibold">Upload Prescription</div>
+                  <div className="text-xs text-blue-100/90">Add new medication</div>
                 </div>
               </div>
             </motion.button>
             
             <motion.button 
-              whileHover={{ scale: 1.05, y: -4 }}
+              whileHover={{ scale: 1.02, y: -2 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => window.print()}
-              className="group relative overflow-hidden flex items-center justify-center px-8 py-8 bg-gradient-to-br from-emerald-500 via-green-600 to-teal-600 hover:from-emerald-600 hover:via-teal-600 hover:to-green-700 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 border border-emerald-400/20"
+              className="group relative overflow-hidden flex items-center justify-center px-4 py-3 bg-gradient-to-br from-emerald-500/90 via-green-600/90 to-teal-600/90 hover:from-emerald-600 hover:via-green-700 hover:to-teal-700 text-white rounded-xl shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-300 border border-emerald-400/30 w-full"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-              <div className="relative flex items-center gap-6">
-                <div className="p-4 bg-white/20 rounded-full backdrop-blur-sm">
-                  <FileText className="h-10 w-10" />
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+              <div className="relative flex items-center gap-3">
+                <div className="p-2 bg-white/25 rounded-lg backdrop-blur-sm shadow-sm">
+                  <FileText className="h-4 w-4" />
                 </div>
                 <div className="text-left">
-                  <div className="text-2xl font-bold mb-1">Print Summary</div>
-                  <div className="text-emerald-100">Generate comprehensive medical report</div>
+                  <div className="text-sm font-semibold">Print Summary</div>
+                  <div className="text-xs text-emerald-100/90">Generate report</div>
                 </div>
               </div>
             </motion.button>
-          </div>
         </div>
       </div>
                 </div>
@@ -656,49 +742,46 @@ export default function PatientDashboard() {
 
       {/* Feedback Modal */}
       {showFeedbackModal && selectedMedicationForFeedback && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden border border-slate-200/60 dark:border-slate-700/60"
           >
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-500 rounded-full">
-                  <MessageSquare className="h-6 w-6 text-white" />
-                </div>
+            <div className="bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 border-b-2 border-slate-300 dark:border-slate-500">
+              <div className="flex items-center justify-between p-4">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Medication Feedback</h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">Medication Feedback</h2>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
                     {selectedMedicationForFeedback.medicationName}
                   </p>
-                </div>
               </div>
               <button
                 onClick={() => setShowFeedbackModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-500 transition-colors border border-slate-300 dark:border-slate-500"
               >
-                <X className="h-6 w-6" />
+                  <X className="h-4 w-4 text-slate-600 dark:text-slate-300" />
               </button>
+              </div>
             </div>
             
-            <div className="p-6 max-h-[70vh] overflow-y-auto">
-              <div className="space-y-6">
+            <div className="p-4 max-h-[60vh] overflow-y-auto">
+              <div className="space-y-4">
                 {/* Effectiveness Rating */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                  <label className="block text-sm font-medium text-slate-900 dark:text-white mb-2">
                     How effective was this medication?
                   </label>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     {['Very Effective', 'Somewhat Effective', 'Not Effective'].map((option) => (
                       <button
                         key={option}
                         onClick={() => setFeedbackData(prev => ({ ...prev, effectiveness: option }))}
-                        className={`p-3 rounded-lg border-2 transition-all duration-200 ${
+                        className={`p-2.5 rounded-lg border text-sm transition-colors ${
                           feedbackData.effectiveness === option
-                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300'
-                            : 'border-gray-200 dark:border-gray-600 hover:border-orange-300 dark:hover:border-orange-600'
+                            ? 'border-slate-600 bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-white font-medium'
+                            : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                         }`}
                       >
                         {option}
@@ -707,23 +790,21 @@ export default function PatientDashboard() {
                   </div>
                 </div>
 
-
-
                 {/* Side Effects */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                    Did you experience any side effects? (Select all that apply)
+                  <label className="block text-sm font-medium text-slate-900 dark:text-white mb-2">
+                    Side effects? (Select all that apply)
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {['Nausea', 'Dizziness', 'Headache', 'Drowsiness', 'Dry Mouth', 'Upset Stomach', 'Rash', 'None'].map((effect) => (
-                      <label key={effect} className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                      <label key={effect} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors">
                         <input
                           type="checkbox"
                           checked={feedbackData.sideEffects.includes(effect)}
                           onChange={() => toggleSymptom(effect, 'sideEffects')}
-                          className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 dark:focus:ring-orange-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                          className="w-4 h-4 text-slate-600 bg-white border-slate-300 rounded focus:ring-slate-500 dark:focus:ring-slate-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
                         />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">{effect}</span>
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{effect}</span>
                       </label>
                     ))}
                   </div>
@@ -731,47 +812,49 @@ export default function PatientDashboard() {
 
                 {/* Additional Notes */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                  <label className="block text-sm font-medium text-slate-900 dark:text-white mb-2">
                     Additional Notes (Optional)
                   </label>
                   <textarea
                     value={feedbackData.notes}
                     onChange={(e) => setFeedbackData(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="Share any additional observations or concerns..."
-                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
-                    rows={3}
+                    placeholder="Share any observations or experiences..."
+                    className="w-full p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent dark:bg-slate-700 dark:text-white resize-none text-sm"
+                    rows={2}
                   />
                 </div>
 
                 {/* Date */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                  <label className="block text-sm font-medium text-slate-900 dark:text-white mb-2">
                     Date of Feedback
                   </label>
                   <input
                     type="date"
                     value={feedbackData.date}
                     onChange={(e) => setFeedbackData(prev => ({ ...prev, date: e.target.value }))}
-                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent dark:bg-slate-700 dark:text-white text-sm"
                   />
                 </div>
               </div>
             </div>
             
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-600">
+              <div className="flex items-center justify-end gap-3 p-4">
               <button
                 onClick={() => setShowFeedbackModal(false)}
-                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleFeedbackSubmit}
                 disabled={!feedbackData.effectiveness}
-                className="px-6 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 dark:hover:bg-slate-200"
               >
                 Submit Feedback
               </button>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -779,27 +862,27 @@ export default function PatientDashboard() {
 
       {/* Enhanced Image Viewer Modal */}
       {selectedImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-lg max-w-2xl w-full max-h-[80vh] overflow-hidden"
           >
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Prescription Image</h2>
+            <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Prescription Image</h2>
               <button
                 onClick={() => setSelectedImage(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
-                <X className="h-6 w-6" />
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="p-4">
+            <div className="p-3">
               <img 
                 src={selectedImage} 
                 alt="Prescription" 
-                className="w-full h-auto max-h-[70vh] object-contain rounded-lg shadow-lg"
+                className="w-full h-auto rounded-lg shadow-sm"
               />
             </div>
           </motion.div>
@@ -846,11 +929,185 @@ export default function PatientDashboard() {
         </div>
       )}
 
-      {/* Live Health Metrics Section */}
-      <div className="bg-gradient-to-br from-cyan-100 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-gray-950 dark:to-blue-950 rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-800/20 mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-          <Activity className="h-7 w-7 animate-pulse text-blue-500" /> Live Health Metrics
-        </h2>
+      {/* Feedback Display Modal */}
+      {showFeedbackDisplay && selectedPrescriptionForFeedback && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-lg max-w-2xl w-full max-h-[80vh] overflow-hidden"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Medication Feedback</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    {selectedPrescriptionForFeedback.medicationName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFeedbackDisplay(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 max-h-[60vh] overflow-y-auto">
+              {getFeedbackForPrescription(selectedPrescriptionForFeedback.id).length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="mx-auto h-12 w-12 text-slate-400 dark:text-slate-500 mb-3" />
+                  <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">No Feedback Yet</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    You haven't provided feedback for this medication yet.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowFeedbackDisplay(false)
+                      openFeedbackModal(selectedPrescriptionForFeedback)
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg text-sm font-medium transition-all duration-200"
+                  >
+                    Give Feedback Now
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {getFeedbackForPrescription(selectedPrescriptionForFeedback.id).map((feedback, index) => (
+                    <motion.div
+                      key={feedback.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2, delay: index * 0.1 }}
+                      className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4 border border-slate-200/60 dark:border-slate-600/60"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                            <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <span className="text-sm font-medium text-slate-900 dark:text-white">
+                            {formatDate(feedback.date)}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          {new Date(feedback.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      
+                      {/* Effectiveness */}
+                      <div className="mb-3">
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                          Effectiveness
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            feedback.effectiveness === 'Very Effective' 
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                              : feedback.effectiveness === 'Somewhat Effective'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                              : feedback.effectiveness === 'Not Very Effective'
+                              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                          }`}>
+                            {feedback.effectiveness}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Symptoms */}
+                      {feedback.symptoms.length > 0 && (
+                        <div className="mb-3">
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Symptoms Experienced
+                          </label>
+                          <div className="flex flex-wrap gap-1">
+                            {feedback.symptoms.map((symptom, idx) => (
+                              <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md bg-orange-50 text-orange-700 text-xs dark:bg-orange-900/30 dark:text-orange-300">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                {symptom}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Side Effects */}
+                      {feedback.sideEffects.length > 0 && (
+                        <div className="mb-3">
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Side Effects
+                          </label>
+                          <div className="flex flex-wrap gap-1">
+                            {feedback.sideEffects.map((effect, idx) => (
+                              <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md bg-red-50 text-red-700 text-xs dark:bg-red-900/30 dark:text-red-300">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                {effect}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Notes */}
+                      {feedback.notes && (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Additional Notes
+                          </label>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-600">
+                            {feedback.notes}
+                          </p>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setShowFeedbackDisplay(false)}
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+              >
+                Close
+              </button>
+              {getFeedbackForPrescription(selectedPrescriptionForFeedback.id).length > 0 && (
+                <button
+                  onClick={() => {
+                    setShowFeedbackDisplay(false)
+                    openFeedbackModal(selectedPrescriptionForFeedback)
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg text-sm font-medium transition-all duration-200"
+                >
+                  Add More Feedback
+                </button>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Live Health Metrics */}
+      <div className="bg-gradient-to-br from-cyan-50/80 via-blue-50/60 to-indigo-50/40 dark:from-slate-900 dark:via-slate-950 dark:to-blue-950 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-slate-900/20 border border-slate-200/30 dark:border-slate-700/30 overflow-hidden backdrop-blur-sm">
+        <div className="px-6 py-5 bg-gradient-to-r from-cyan-50/90 via-blue-50/70 to-indigo-50/50 dark:from-slate-800/60 dark:via-slate-700/40 dark:to-slate-600/30 border-b border-slate-200/40 dark:border-slate-700/40">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-gradient-to-br from-cyan-500/90 via-blue-600/90 to-indigo-600/90 rounded-xl shadow-lg shadow-cyan-500/20">
+              <Activity className="h-6 w-6 text-white animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Live Health Metrics</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Real-time health monitoring</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Heart Rate Chart */}
           <div className="flex flex-col items-center">
@@ -895,188 +1152,95 @@ export default function PatientDashboard() {
             </ResponsiveContainer>
             <span className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-2">{liveMetrics[liveMetrics.length-1].spo2}%</span>
           </div>
-        </div>
-      </div>
-      
-      {/* Medication Feedback Section */}
-      <div className="bg-gradient-to-br from-orange-100 via-amber-50 to-yellow-100 dark:from-gray-900 dark:via-gray-950 dark:to-orange-950 rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-800/20 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-500 rounded-full shadow-lg">
-              <MessageSquare className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Medication Feedback</h2>
-              <p className="text-gray-600 dark:text-gray-400">Share your experience with medications</p>
             </div>
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {prescriptions.slice(0, 6).map((prescription) => (
-            <motion.div
-              key={prescription.id}
-              whileHover={{ scale: 1.02, y: -2 }}
-              className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-4 shadow-lg hover:shadow-xl transition-all duration-300 border border-orange-200 dark:border-orange-700"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Pill className="h-5 w-5 text-orange-500" />
-                  <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
-                    {prescription.medicationName}
-                  </h3>
-                </div>
-                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                  prescription.isActive 
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                }`}>
-                  {prescription.isActive ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              
-              <div className="space-y-2 mb-4">
-                {prescription.dosage && prescription.dosage !== 'N/A' && (
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    <span className="font-medium">Dosage:</span> {prescription.dosage}
-                  </div>
-                )}
-                {prescription.frequency && prescription.frequency !== 'N/A' && (
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    <span className="font-medium">Frequency:</span> {prescription.frequency}
-                  </div>
-                )}
-              </div>
-              
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => openFeedbackModal(prescription)}
-                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-              >
-                <MessageSquare className="h-4 w-4" />
-                Give Feedback
-              </motion.button>
-            </motion.div>
-          ))}
-        </div>
-        
-        {prescriptions.length === 0 && (
-          <div className="text-center py-8">
-            <MessageSquare className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Medications Available</h3>
-            <p className="text-gray-600 dark:text-gray-400">Add prescriptions to start providing feedback</p>
-          </div>
-        )}
-      </div>
-
-
-      {/* Enhanced Medication Reminders Section */}
-      <div className="bg-gradient-to-br from-emerald-100 via-green-50 to-teal-100 dark:from-gray-900 dark:via-gray-950 dark:to-emerald-950 rounded-2xl shadow-xl p-8 border border-white/20 dark:border-gray-800/20 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-emerald-500 rounded-full shadow-lg">
-              <Bell className="h-8 w-8 text-white" />
+      {/* Medication Reminders */}
+      <div className="bg-white/90 dark:bg-slate-900/90 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-slate-900/20 border border-slate-200/30 dark:border-slate-700/30 overflow-hidden backdrop-blur-sm">
+        <div className="px-6 py-5 bg-gradient-to-r from-purple-50/80 via-pink-50/60 to-rose-50/40 dark:from-slate-800/60 dark:via-slate-700/40 dark:to-slate-600/30 border-b border-slate-200/40 dark:border-slate-700/40">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-gradient-to-br from-purple-500/90 via-pink-600/90 to-rose-600/90 rounded-xl shadow-lg shadow-purple-500/20">
+              <Clock3 className="h-6 w-6 text-white" />
         </div>
             <div>
-              <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Medication Reminders</h2>
-              <p className="text-gray-600 dark:text-gray-400">Track your daily medication schedule</p>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Medication Reminders</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Stay on track with your medications</p>
         </div>
       </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{adherenceRate}%</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Adherence Rate</div>
           </div>
-          </div>
-        
-        {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="w-full bg-white/40 rounded-full h-3 shadow-inner">
-            <div 
-              className="bg-gradient-to-r from-emerald-400 to-green-500 h-3 rounded-full transition-all duration-700 shadow-lg" 
-              style={{ width: `${adherenceRate}%` }}
-            ></div>
-          </div>
-        </div>
-
-        {/* Reminders List */}
-        <div className="space-y-4">
+        <div className="p-5 space-y-4">
           {reminders.map((reminder, index) => (
             <motion.div
               key={reminder.id}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-              className={`relative overflow-hidden rounded-xl shadow-lg border-2 transition-all duration-300 hover:shadow-xl ${
+              transition={{ duration: 0.2, delay: index * 0.05 }}
+              className={`relative overflow-hidden rounded-lg shadow-sm border transition-all duration-200 hover:shadow-md ${
                 reminder.taken 
-                  ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-200 dark:border-green-700' 
-                  : 'bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 border-gray-200 dark:border-gray-600'
+                  ? 'bg-gradient-to-r from-emerald-50/80 to-green-50/80 dark:from-emerald-900/20 dark:to-green-900/20 border-emerald-200/50 dark:border-emerald-700/50' 
+                  : 'bg-gradient-to-r from-white/80 to-slate-50/80 dark:from-slate-800/80 dark:to-slate-700/80 border-slate-200/50 dark:border-slate-600/50'
               }`}
             >
-              <div className="p-6">
+              <div className="p-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-full shadow-md ${
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg shadow-sm ${
                       reminder.taken 
-                        ? 'bg-green-500 text-white' 
-                        : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                        ? 'bg-emerald-500 text-white' 
+                        : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
                     }`}>
-                      <Pill className="h-6 w-6" />
+                      <Pill className="h-4 w-4" />
         </div>
         <div>
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">
                         {reminder.medicationName}
                       </h3>
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium">
-                          <Clock3 className="h-4 w-4 mr-1" />
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 rounded-md text-xs font-medium">
+                          <Clock3 className="h-3 w-3 mr-1" />
                           {reminder.time}
                 </span>
-                        <span className="inline-flex items-center px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-sm font-medium">
-                          <Calendar className="h-4 w-4 mr-1" />
+                        <span className="inline-flex items-center px-2 py-0.5 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300 rounded-md text-xs font-medium">
+                          <Calendar className="h-3 w-3 mr-1" />
                           {reminder.date}
                 </span>
         </div>
       </div>
       </div>
                   
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <div className="relative">
-                        <input
-                          type="checkbox"
-                          checked={reminder.taken}
-                          onChange={() => {
-                            console.log(`Marking ${reminder.medicationName} as ${reminder.taken ? 'not taken' : 'taken'}`)
-                          }}
-                          className="w-6 h-6 text-emerald-600 bg-white border-2 border-gray-300 rounded-lg focus:ring-4 focus:ring-emerald-500/20 focus:ring-offset-0 dark:bg-gray-700 dark:border-gray-600 transition-all duration-200"
-                        />
-                        {reminder.taken && (
-                          <CheckCircle className="absolute inset-0 w-6 h-6 text-emerald-600 pointer-events-none" />
-                        )}
-                      </div>
-                      <span className={`text-lg font-semibold transition-colors duration-200 ${
+                  <div className="flex items-center gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => toggleReminder(reminder.id)}
+                      className={`relative p-2 rounded-lg transition-all duration-200 ${
                         reminder.taken 
-                          ? 'text-green-700 dark:text-green-300' 
-                          : 'text-gray-700 dark:text-gray-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400'
-                      }`}>
-                        {reminder.taken ? 'Taken' : 'Mark as Taken'}
-              </span>
-                    </label>
+                          ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300' 
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 hover:bg-emerald-100 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300'
+                      }`}
+                      title={reminder.taken ? 'Mark as not taken' : 'Mark as taken'}
+                    >
+                      {reminder.taken ? (
+                        <CheckCircle className="h-4 w-4" />
+                      ) : (
+                        <Circle className="h-4 w-4" />
+                      )}
+                    </motion.button>
                     
-                    <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-bold shadow-md transition-all duration-200 ${
+                    <div className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium shadow-sm transition-all duration-200 ${
                       reminder.taken 
-                        ? 'bg-green-100 text-green-800 border-2 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-600' 
-                        : 'bg-red-100 text-red-800 border-2 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-600'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700' 
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-700'
                     }`}>
                       {reminder.taken ? (
                         <>
-                          <CheckCircle className="h-5 w-5 mr-2 text-green-600" />
-                          Completed
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Done
                         </>
                       ) : (
                         <>
-                          <AlertCircle className="h-5 w-5 mr-2 text-red-600" />
+                          <AlertCircle className="h-3 w-3 mr-1" />
                           Pending
                         </>
                       )}
@@ -1087,66 +1251,93 @@ export default function PatientDashboard() {
               
               {/* Success Animation Overlay */}
               {reminder.taken && (
-                <div className="absolute inset-0 bg-gradient-to-r from-green-400/10 to-emerald-400/10 pointer-events-none"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/5 to-green-400/5 pointer-events-none"></div>
               )}
             </motion.div>
           ))}
       </div>
         
         {/* Summary Stats */}
-        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="p-4 bg-white/60 dark:bg-gray-800/60 rounded-lg">
-              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+        <div className="px-4 pb-4 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="p-3 bg-white/60 dark:bg-slate-800/60 rounded-lg shadow-sm">
+              <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
                 {reminders.filter(r => r.taken).length}
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Taken Today</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Taken</div>
             </div>
-            <div className="p-4 bg-white/60 dark:bg-gray-800/60 rounded-lg">
-              <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+            <div className="p-3 bg-white/60 dark:bg-slate-800/60 rounded-lg shadow-sm">
+              <div className="text-lg font-bold text-rose-600 dark:text-rose-400">
                 {reminders.filter(r => !r.taken).length}
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Pending</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Pending</div>
             </div>
-            <div className="p-4 bg-white/60 dark:bg-gray-800/60 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            <div className="p-3 bg-white/60 dark:bg-slate-800/60 rounded-lg shadow-sm">
+              <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
                 {reminders.length}
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Total Reminders</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Total</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Symptom Checker Section */}
-      <div className="bg-gradient-to-br from-yellow-100 via-orange-50 to-amber-100 dark:from-gray-900 dark:via-gray-950 dark:to-yellow-950 rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-800/20 mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-          <AlertTriangle className="h-7 w-7 text-yellow-500 animate-bounce" /> Symptom Checker
-        </h2>
-        <div className="flex flex-wrap gap-2 mb-4">
+      {/* Symptom Checker */}
+      <div className="bg-gradient-to-br from-yellow-50/80 via-orange-50/60 to-amber-50/40 dark:from-slate-900 dark:via-slate-950 dark:to-yellow-950 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-slate-900/20 border border-slate-200/30 dark:border-slate-700/30 overflow-hidden backdrop-blur-sm">
+        <div className="px-6 py-5 bg-gradient-to-r from-yellow-50/90 via-orange-50/70 to-amber-50/50 dark:from-slate-800/60 dark:via-slate-700/40 dark:to-slate-600/30 border-b border-slate-200/40 dark:border-slate-700/40">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-gradient-to-br from-yellow-500/90 via-orange-600/90 to-amber-600/90 rounded-xl shadow-lg shadow-yellow-500/20">
+              <AlertTriangle className="h-6 w-6 text-white animate-bounce" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Symptom Checker</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Get instant health guidance</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="flex flex-wrap gap-3 mb-6">
           {symptomsList.map(symptom => (
             <button
               key={symptom}
               onClick={() => setSelectedSymptoms(prev => prev.includes(symptom) ? prev.filter(s => s !== symptom) : [...prev, symptom])}
-              className={`px-4 py-2 rounded-lg font-medium shadow transition-all ${selectedSymptoms.includes(symptom) ? 'bg-yellow-400 text-white' : 'bg-white/70 dark:bg-gray-800/70 text-gray-800 dark:text-gray-200'}`}
+                className={`px-4 py-2.5 rounded-xl font-medium shadow-sm transition-all border ${
+                  selectedSymptoms.includes(symptom) 
+                    ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-yellow-400' 
+                    : 'bg-white/70 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700'
+                }`}
             >
               {symptom}
             </button>
           ))}
         </div>
-        <div className="text-md font-semibold text-gray-800 dark:text-yellow-100 flex items-center gap-2 animate-fade-in">
-          <Info className="h-5 w-5 text-yellow-400" />
+          <div className="p-4 bg-white/60 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+            <div className="flex items-center gap-3">
+              <Info className="h-5 w-5 text-yellow-500" />
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
           {getSymptomFeedback()}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
 
 
-      {/* Smart Body Map Section */}
-      <div className="bg-gradient-to-br from-cyan-100 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-gray-950 dark:to-blue-950 rounded-2xl shadow-lg p-6 border border-white/20 dark:border-gray-800/20 mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <EyeIcon className="h-7 w-7 text-cyan-500 animate-pulse" /> Smart Body Map
-        </h2>
+      {/* Smart Body Map */}
+      <div className="bg-gradient-to-br from-cyan-50/80 via-blue-50/60 to-indigo-50/40 dark:from-slate-900 dark:via-slate-950 dark:to-blue-950 rounded-2xl shadow-xl shadow-slate-200/20 dark:shadow-slate-900/20 border border-slate-200/30 dark:border-slate-700/30 overflow-hidden backdrop-blur-sm">
+        <div className="px-6 py-5 bg-gradient-to-r from-cyan-50/90 via-blue-50/70 to-indigo-50/50 dark:from-slate-800/60 dark:via-slate-700/40 dark:to-slate-600/30 border-b border-slate-200/40 dark:border-slate-700/40">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-gradient-to-br from-cyan-500/90 via-blue-600/90 to-indigo-600/90 rounded-xl shadow-lg shadow-cyan-500/20">
+              <EyeIcon className="h-6 w-6 text-white animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">Smart Body Map</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Interactive health monitoring</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
         <div className="flex flex-col md:flex-row gap-6 items-center">
           {/* SVG Body Map */}
           <div className="flex-shrink-0">
@@ -1205,7 +1396,8 @@ export default function PatientDashboard() {
           </div>
         </div>
       </div>
-
     </div>
+  </div> {/* End Main Content */}
+    </div> // End outermost div
   )
 } 

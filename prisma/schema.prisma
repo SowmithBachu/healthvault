@@ -63,6 +63,7 @@ model Prescription {
   // Relations
   patient       User      @relation("PatientPrescriptions", fields: [patientId], references: [id], onDelete: Cascade)
   hospital      User?     @relation("HospitalPrescriptions", fields: [hospitalId], references: [id])
+  feedback      MedicationFeedback[]
   
   @@map("prescriptions")
 }
@@ -80,6 +81,24 @@ model HospitalPatient {
   
   @@unique([hospitalId, patientId])
   @@map("hospital_patients")
+}
+
+model MedicationFeedback {
+  id            String    @id @default(cuid())
+  prescriptionId String
+  medicationName String
+  effectiveness String
+  symptoms      String    // JSON string of symptoms array
+  sideEffects   String    // JSON string of side effects array
+  notes         String?
+  date          DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  prescription  Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  
+  @@map("medication_feedback")
 }
 
 enum UserType {
