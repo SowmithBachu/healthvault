@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  userType      UserType
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Patient-specific fields
+  patientId     String?   @unique
+  dateOfBirth   DateTime?
+  phoneNumber   String?
+  address       String?
+  emergencyContact String?
+  
+  // Hospital-specific fields
+  hospitalName  String?
+  hospitalCode  String?   @unique
+  licenseNumber String?
+  
+  // Relations
+  prescriptions Prescription[] @relation("PatientPrescriptions")
+  hospitalPrescriptions Prescription[] @relation("HospitalPrescriptions")
+  hospitalPatients HospitalPatient[] @relation("HospitalPatients")
+  patientAssignments HospitalPatient[] @relation("PatientAssignments")
+  
+  @@map("users")
+}
+
+model Prescription {
+  id            String    @id @default(cuid())
+  patientId     String
+  hospitalId    String?
+  medicationName String
+  dosage        String
+  frequency     String
+  duration      String
+  instructions  String?
+  imageUrl      String?
+  prescribedDate DateTime @default(now())
+  expiryDate    DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  patient       User      @relation("PatientPrescriptions", fields: [patientId], references: [id], onDelete: Cascade)
+  hospital      User?     @relation("HospitalPrescriptions", fields: [hospitalId], references: [id])
+  
+  @@map("prescriptions")
+}
+
+model HospitalPatient {
+  id            String    @id @default(cuid())
+  hospitalId    String
+  patientId     String
+  assignedDate  DateTime  @default(now())
+  isActive      Boolean   @default(true)
+  
+  // Relations
+  hospital      User      @relation("HospitalPatients", fields: [hospitalId], references: [id], onDelete: Cascade)
+  patient       User      @relation("PatientAssignments", fields: [patientId], references: [id], onDelete: Cascade)
+  
+  @@unique([hospitalId, patientId])
+  @@map("hospital_patients")
+}
+
+enum UserType {
+  PATIENT
+  HOSPITAL
+}
